@@ -8,7 +8,7 @@
 import UIKit
 import Combine
 
-class PSGPlayerFiltersViewController: UIViewController {
+final class PSGPlayerFiltersViewController: UIViewController {
 
     let viewModel = PSGPlayersFiltersViewModel()
     private var actualSelectedIndex = 0

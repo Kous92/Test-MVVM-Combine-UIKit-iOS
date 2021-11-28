@@ -15,7 +15,7 @@ final class MainViewController: UIViewController {
     @IBOutlet weak var searchBar: UISearchBar!
     @IBOutlet weak var noResultLabel: UILabel!
     
-    @Published var searchQuery = ""
+    @Published private(set) var searchQuery = ""
     private var subscriptions = Set<AnyCancellable>()
     private var viewModel = PSGPlayersViewModel()
     
