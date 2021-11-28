@@ -6,6 +6,11 @@ L'architecture **MVVM** et la programmation réactive fonctionnelle sont très u
 - [Architecture MVVM](#mvvm)
 - [Programmation réactive fonctionnelle avec Combine](#combine)
 - [Exemple](#example)
+- [Éléments utilisés avec Combine]()
+    + [Actualisation](#update)
+    + [Recherche](#search)
+    + [Filtrage](#filtering)
+    + [Vue détaillée](#details)
 
 ## <a name="mvvm"></a>Architecture MVVM
 
@@ -92,7 +97,7 @@ Ici, je propose comme exemple une actualisation réactive en temps réel du `Tab
 
 ### Les éléments utilisés avec Combine dans cet exemple
 
-#### 1) L'actualisation réactive
+#### 1) <a name="update"></a> L'actualisation réactive
 
 Pour l'actualisation réactive, j'utilise un sujet dans ma vue modèle (ici `PSGPlayersViewModel`). Lorsque l'appli est lancée et qu'elle fait l'appel HTTP depuis un serveur, le sujet va émettre un événement de réussite si le téléchargement est effectué et si la liste des vues modèles des `TableViewCell` est mise à jour. Le sujet de mise à jour `updateResult` est un `PassthroughSubject`. Un sujet a 2 types dans sa déclaration: une valeur et un élément pour les erreurs (`Never` s'il n'y a pas d'erreur à gérer). Ici, c'est le cas s'il y a une erreur, notamment au lancement de l'application lors de l'appel HTTP (aucune connexion internet, erreur 404, décodage JSON en objets,...). La particularité du `PassthroughSubject` est qu'il n'y a pas besoin de donner une valeur initiale à émettre.
 
@@ -177,7 +182,7 @@ final class MainViewController: UIViewController {
     }
 }
 ```
-#### 1) La recherche réactive
+#### 2) <a name="search"></a> La recherche réactive
 
 Pour la recherche réactive, j'utilise 2 éléments dans ma vue modèle (ici `PSGPlayersViewModel`). Je reprends le sujet d'actualisation `updateResult`, et une propriété `@Published` pour la recherche qui reçoit en temps réel un `String` afin de rechercher le joueur voulu. Cet élément fera office d'observateur qui va s'abonner aux événements de la vue. Il faudra également utiliser un `AnyCancellable` pour gérer l'annulation des abonnements et éviter toute fuite mémoire.
 
@@ -212,6 +217,7 @@ final class PSGPlayersViewModel {
 ```
 
 Dans le `ViewController`, on fait la même chose que dans la vue modèle avec un `Publisher<String>` (`@Published searchQuery`). Dans le traitement de l'abonnement avec `sink(receiveValue: )`, on affecte la valeur recherchée à l'observeur de la vue modèle. La valeur reçue dans la vue modèle va automatiquement déclencher la fonction `searchPlayer()`. Dans la fonction `textDidChange` de `UISearchBarDelegate`, dès lors que le texte de la barre de recherche est modifié, l'action dans le `sink(receiveValue: )` va se déclencher.
+
 ```swift
 final class MainViewController: UIViewController {
     ...
@@ -267,6 +273,300 @@ final class PSGPlayersViewModel {
         } else {
             updateResult.send(false)
         }
+    }
+}
+```
+
+#### 3) <a name="filtering"></a> Le filtrage réactif
+
+Dans le cadre du filtrage, on utiliserait en temps normal le pattern de la délégation pour recevoir des données dans le sens inverse de `FilterViewController` vers `MainViewController`. Là encore une fois, avec une vue modèle pour le filtrage, on va y effectuer le data binding depuis la vue principale lorsque l'utilisateur tape sur le bouton du filtre. Dans la vue modèle, un `PassthroughSubject` est aussi utilisé, excepté qu'ici on ne traite pas d'erreur vu qu'il y en a pas, on utilise donc `Never`. Lorsque le filtre est sélectionné, on va utiliser la méthode `send(value: )` pour y émettre le filtre sélectionné. De plus, on va récupérer le filtre actuel à l'initialisation.
+
+```swift
+final class PSGPlayersFiltersViewModel {
+    let selectedFilter = PassthroughSubject<PlayerFilter, Never>()
+    var actualFilter: PlayerFilter = .noFilter
+
+    ...
+    
+    func setFilter(savedFilter: PlayerFilter = .noFilter) {
+        actualFilter = savedFilter
+        selectedFilter.send(savedFilter)
+    }
+}
+```
+
+Dans `FilterViewController`, lorsqu'une cellule du `TableView` est sélectionnée, un événement sera émis à la vue principale par le biais de `selectedFilters` dans la vue modèle, avec `.send(value: )`
+
+```swift
+final class PSGPlayerFiltersViewController: UIViewController {
+    let viewModel = PSGPlayersFiltersViewModel()
+    ...
+    
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        ...
+        
+        // On garde en mémoire la catégorie séléctionnée
+        actualSelectedIndex = selected
+        viewModel.actualFilter = viewModel.filters[indexPath.row]
+        viewModel.selectedFilter.send(viewModel.filters[indexPath.row])
+}
+```
+
+Afin que cela ait effet dans la vue principale, les liens se définissent avec une référence vers `FilterViewController` depuis `MainViewController` avec `filterViewController.viewModel`. Pour l'application du filtre, la méthode `.handleEvents(receiveOutput:)` est utilisée (cela remplace la délégation) pour y recevoir les données en sens inverse et effectuer les actions. `sink(value: )` est utilisé par la suite mais il n'y a rien de particulier à faire. On stocke ensuite l'abonnement dans une liste d'`AnyCancellable` afin d'éviter les fuites de mémoire. De plus, on définit un data binding avec la vue modèle pour le filtrage actif, comme pour la recherche, en y modifiant la valeur par le filtre sélectionné dans l'abonnement.
+
+```swift
+final class MainViewController: UIViewController {
+    ...
+    private var subscriptions = Set<AnyCancellable>()
+    private var viewModel = PSGPlayersViewModel()
+
+    private func setBindings() {
+        func setSearchBinding() {
+            ...
+        }
+
+        func setUpdateBinding() {
+            ...
+        }
+        
+        func setActiveFilterBinding() {
+            viewModel.$activeFilter
+                .receive(on: RunLoop.main)
+                .removeDuplicates()
+                .sink { [weak self] value in
+                    print(value)
+                    self?.viewModel.activeFilter = value
+                }.store(in: &subscriptions)
+        }
+
+        setSearchBinding()
+        setUpdateBinding()
+        setActiveFilterBinding()
+    }
+
+    @IBAction func filterButton(_ sender: Any) {
+        guard let filterViewController = storyboard?.instantiateViewController(withIdentifier: "filtersViewController") as? PSGPlayerFiltersViewController else {
+            fatalError("Le ViewController n'est pas détecté dans le Storyboard.")
+        }
+        
+        func setFilterVCBinding() {
+            // On garde en mémoire le filtre sélectionné
+            filterViewController.viewModel.setFilter(savedFilter: viewModel.activeFilter)
+            
+            // Ici, on remplace la délégation par un binding par le biais d'un PassthroughSubject
+            filterViewController.viewModel.selectedFilter
+                .handleEvents(receiveOutput: { [weak self] filter in
+                    self?.appliedFilterLabel.text = filter.rawValue
+                    self?.viewModel.activeFilter = filter
+                }).sink { _ in }
+                .store(in: &subscriptions)
+        }
+        
+        setFilterVCBinding()
+        filterViewController.modalPresentationStyle = .fullScreen
+        self.present(filterViewController, animated: true, completion: nil)
+    }
+}
+```
+
+Ensuite, on fait la même chose qu'avec la recherche, en utilisant un `Publisher<PlayerFilter>` dédié pour le filtre choisi. L'abonnement depuis la vue déclenchant automatiquement la fonction `applyFilter()`, le filtrage s'effectue, la liste mise à jour par l'émission de l'événement depuis le sujet `updateResult`.
+
+```swift
+final class PSGPlayersViewModel {
+    var updateResult = PassthroughSubject<Bool, APIError>()
+    @Published var activeFilter: PlayerFilter = .noFilter
+    ...
+    private func setBindings() {
+        $activeFilter.receive(on: RunLoop.main)
+            .removeDuplicates()
+            .sink { [weak self] value in
+                self?.applyFilter()
+            }.store(in: &subscriptions)
+    }
+    ...
+    private func applyFilter() {
+        switch activeFilter {
+        case .noFilter:
+            filteredPlayersViewModels = playersViewModel
+        case .numberOrder:
+            // Tri par numéro dans l'ordre croissant
+            filteredPlayersViewModels = playersViewModel.sorted(by: { player1, player2 in
+                return player1.number < player2.number
+            })
+        case .goalkeepers:
+            // Les gardiens de but
+            filteredPlayersViewModels = playersViewModel.filter { $0.position == "Gardien de but" }
+        case .defenders:
+            // Les défenseurs
+            filteredPlayersViewModels = playersViewModel.filter { $0.position == "Latéral droit" || $0.position == "Défenseur central" || $0.position == "Défenseur" || $0.position == "Latéral gauche" }
+        case .midfielders:
+            // Les milieux de terrain
+            filteredPlayersViewModels = playersViewModel.filter { $0.position == "Milieu" || $0.position == "Milieu offensif" || $0.position == "Milieu défensif" }
+        case .forwards:
+            // Les attaquants
+            filteredPlayersViewModels = playersViewModel.filter { $0.position == "Attaquant" || $0.position == "Avant-centre" }
+        case .fromPSGFormation:
+            filteredPlayersViewModels = playersViewModel.filter { $0.player.fromPSGformation }
+        case .alphabeticalOrder:
+            filteredPlayersViewModels = playersViewModel.sorted(by: { player1, player2 in
+                return player1.name < player2.name
+            })
+        }
+        
+        updateResult.send(true)
+    }
+}
+```
+
+#### 4) <a name="details"></a> La vue détaillée
+
+Pour la vue détaillée qui affiche des détails, le `ViewController` dédié sera lié avec la vue modèle dédié par le biais de variables observeurs dans la vue modèle. Dès lors que l'injection de dépendance sera effectuée, la vue modèle va envoyer un événement à chaque élément visuel pour actualiser la vue.
+
+L'injection de dépendance s'effectue lors de la sélection de la cellule dans la liste avec la méthode `configure(with: viewModel)` par le biais de la vue modèle de la cellule.
+```swift
+extension MainViewController: UITableViewDelegate {
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        guard let detailsViewController = storyboard?.instantiateViewController(withIdentifier: "detailsViewController") as? PSGPlayerDetailsViewController else {
+            fatalError("Le ViewController n'est pas détecté dans le Storyboard.")
+        }
+        
+        tableView.deselectRow(at: indexPath, animated: true)
+        // Injection de dépendance
+        detailsViewController.configure(with: PSGPlayerDetailsViewModel(player: viewModel.filteredPlayersViewModels[indexPath.row].player))
+        detailsViewController.modalPresentationStyle = .fullScreen
+        present(detailsViewController, animated: true, completion: nil)
+    }
+}
+```
+
+Lorsque la vue est chargée, les liens entre les composants UI et la vue modèle s'effectuent.
+```swift
+final class PSGPlayerDetailsViewController: UIViewController {
+    ...
+    private var viewModel: PSGPlayerDetailsViewModel!
+    private var subscriptions: Set<AnyCancellable> = []
+    ...
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        setBindings()
+    }
+
+    // Injection de dépendance
+    func configure(with viewModel: PSGPlayerDetailsViewModel) {
+        self.viewModel = viewModel
+    }
+}
+```
+
+Dans la vue modèle, chaque champ attribué à un texte visuel ou une image est un observeur (avec `@Published`). Ici, on ne modifiera leurs contenus que depuis l'initialiseur lors de l'injection de dépendance, par le biais de la méthode `configure(with: viewModel)` du `ViewController`.
+```swift
+// MARK: - Vue modèle d'un joueur du PSG (tous les éléments)
+final class PSGPlayerDetailsViewModel: PSGPlayerDetails {
+    let player: PSGPlayer
+    
+    @Published private(set) var image: String
+    @Published private(set) var number: Int
+    @Published private(set) var name: String
+    @Published private(set) var position: String
+    @Published private(set) var fromPSGformation: Bool
+    @Published private(set) var country: String
+    @Published private(set) var size: Int
+    @Published private(set) var weight: Int
+    @Published private(set) var birthDate: String
+    @Published private(set) var goals: Int
+    @Published private(set) var matches: Int
+    
+    // Injection de dépendance
+    init(player: PSGPlayer) {
+        self.player = player
+        self.image = player.imageURL
+        self.number = player.number
+        self.name = player.name
+        self.position = player.position
+        self.fromPSGformation = player.fromPSGformation
+        self.country = player.country
+        self.size = player.size
+        self.weight = player.weight
+        self.birthDate = player.birthDate
+        self.goals = player.goals
+        self.matches = player.matches
+    }
+}
+```
+
+Ensuite, on définit les data bindings des composants UI avec les champs de la vue modèle. On utilise `$` de l'attribut ciblé suivi de `.receive(on: RunLoop.main)` pour effectuer l'actualisation depuis le thread principal. On utilise ensuite l'opérateur `compactMap` pour la mise en forme du contenu à afficher (`compactMap` lorsqu'il y a des optionnels, `map` sinon). Ensuite, on utilise l'autre méthode d'abonnement pour y effectuer la modification du texte visuel avec `.assign(to: \.text, on: label)`. On stocke ensuite l'abonnement dans une liste d'`AnyCancellable` afin d'éviter les fuites de mémoire.
+Concernant l'image, on utilisera `sink(receiveValue: )` pour y actualiser l'image de façon asynchrone avec l'URL récupérée depuis `compactMap`.
+```swift
+extension PSGPlayerDetailsViewController {
+    // L'actualisation de la vue sera automatique.
+    private func setBindings() {
+        viewModel.$number
+            .receive(on: RunLoop.main)
+            .compactMap { String($0) }
+            .assign(to: \.text, on: playerNumberLabel)
+            .store(in: &subscriptions)
+        
+        viewModel.$name
+            .receive(on: RunLoop.main)
+            .compactMap { $0 }
+            .assign(to: \.text, on: playerNameLabel)
+            .store(in: &subscriptions)
+        
+        viewModel.$position
+            .receive(on: RunLoop.main)
+            .compactMap { $0 }
+            .assign(to: \.text, on: playerPositionLabel)
+            .store(in: &subscriptions)
+        
+        viewModel.$size
+            .receive(on: RunLoop.main)
+            .compactMap { "Taille: " + String($0) + " cm" }
+            .assign(to: \.text, on: playerSizeLabel)
+            .store(in: &subscriptions)
+        
+        viewModel.$weight
+            .receive(on: RunLoop.main)
+            .compactMap { "Poids: " + String($0) + " kg" }
+            .assign(to: \.text, on: playerWeightLabel)
+            .store(in: &subscriptions)
+        
+        viewModel.$country
+            .receive(on: RunLoop.main)
+            .compactMap { "Pays: " + $0 }
+            .assign(to: \.text, on: playerCountryLabel)
+            .store(in: &subscriptions)
+        
+        viewModel.$birthDate
+            .receive(on: RunLoop.main)
+            .compactMap { "Date de naissance: " + $0 }
+            .assign(to: \.text, on: playerBirthdateLabel)
+            .store(in: &subscriptions)
+        
+        viewModel.$fromPSGformation
+            .receive(on: RunLoop.main)
+            .compactMap { "Formé au PSG: " + ($0 ? "oui": "non") }
+            .assign(to: \.text, on: playerTrainedLabel)
+            .store(in: &subscriptions)
+        
+        viewModel.$matches
+            .receive(on: RunLoop.main)
+            .compactMap { "Joués: " + String($0) }
+            .assign(to: \.text, on: playerPlayedMatchesLabel)
+            .store(in: &subscriptions)
+        
+        viewModel.$goals
+            .receive(on: RunLoop.main)
+            .compactMap { "Buts: " + String($0) }
+            .assign(to: \.text, on: playerGoalsLabel)
+            .store(in: &subscriptions)
+        
+        // L'image va s'actualiser de façon réactive
+        viewModel.$image
+            .receive(on: RunLoop.main)
+            .compactMap{ URL(string: $0) }
+            .sink { [weak self] url in
+                self?.playerImage.loadImage(fromURL: url)
+        }.store(in: &subscriptions)
     }
 }
 ```

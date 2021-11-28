@@ -112,6 +112,7 @@
 				4BB437252730550F009232C8 /* PSGPlayersViewModel.swift */,
 				4BB436F927305463009232C8 /* MainViewController.swift */,
 				4BA3B676273E7AF5008B2F2A /* PSGPlayerTableViewCell.swift */,
+				4B5F2EB0273DDC3500DA2359 /* PSGPlayerCellViewModel.swift */,
 			);
 			path = Home;
 			sourceTree = "<group>";
@@ -120,7 +121,6 @@
 			isa = PBXGroup;
 			children = (
 				4B5F2EAC273DD9DE00DA2359 /* PSGPlayerDetailsViewController.swift */,
-				4B5F2EB0273DDC3500DA2359 /* PSGPlayerCellViewModel.swift */,
 				4BCE5E7E274DB8D000D79731 /* PSGPlayerDetailsViewModel.swift */,
 			);
 			path = Details;
