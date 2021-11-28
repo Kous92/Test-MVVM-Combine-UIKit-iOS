@@ -9,7 +9,7 @@ import Foundation
 import Combine
 
 final class PSGPlayersViewModel {
-    // Les observeurs
+    // Les sujets, ceux qui émettent et reçoivent des événements
     var updateResult = PassthroughSubject<Bool, APIError>()
     @Published var searchQuery = ""
     @Published var activeFilter: PlayerFilter = .noFilter
@@ -17,9 +17,10 @@ final class PSGPlayersViewModel {
     private var playersData: PSGPlayersResponse?
     private var playersViewModel = [PSGPlayerCellViewModel]()
     var filteredPlayersViewModels = [PSGPlayerCellViewModel]()
-    
-    private var observers = Set<AnyCancellable>()
     private let apiService: APIService
+    
+    // Pour la gestion mémoire et l'annulation des abonnements
+    private var subscriptions = Set<AnyCancellable>()
     
     // Injection de dépendance
     init(apiService: APIService = PSGAPIService()) {
@@ -48,13 +49,13 @@ final class PSGPlayersViewModel {
             .debounce(for: .seconds(0.5), scheduler: RunLoop.main)
             .sink { [weak self] value in
                 self?.searchPlayer()
-            }.store(in: &observers)
+            }.store(in: &subscriptions)
         
         $activeFilter.receive(on: RunLoop.main)
             .removeDuplicates()
             .sink { [weak self] value in
                 self?.applyFilter()
-            }.store(in: &observers)
+            }.store(in: &subscriptions)
     }
 }
 

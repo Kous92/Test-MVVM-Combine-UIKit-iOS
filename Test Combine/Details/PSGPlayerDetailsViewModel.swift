@@ -11,6 +11,7 @@ import Combine
 // MARK: - Vue modèle d'un joueur du PSG (tous les éléments)
 final class PSGPlayerDetailsViewModel: PSGPlayerDetails {
     let player: PSGPlayer
+    
     @Published private(set) var image: String
     @Published private(set) var number: Int
     @Published private(set) var name: String

@@ -56,7 +56,7 @@ On parle de programmation réactive fonctionnelle (on dit aussi **FRP: Functiona
 
 La programmation réactive fonctionnelle est donc parfaitement adaptée pour le data binding dans l'architecture MVVM avec un observable dans la vue modèle pour émettre les événements reçus notamment asynchrones (appels réseau, actualisation GPS, mise à jour des données du modèle, ...) et un observateur dans la vue qui va s'abonner à l'observable de la vue modèle.
 
-Il faut par contre aussi utiliser des conteneurs qui vont annuler l'abonnement des observateurs (`Cancellable` avec **Combine**) et gérer les désallocations mémoires afin d'éviter les fuites de mémoire (**memory leak**).
+Il faut par contre aussi utiliser des conteneurs qui vont annuler l'abonnement des observateurs (`AnyCancellable` avec **Combine**) et gérer les désallocations mémoires afin d'éviter les fuites de mémoire (**memory leak**).
 
 La programmation réactive fonctionnelle reste l'une des notions les plus complexes à apprendre et à maîtriser (surtout par soi-même en autodidacte), la définition en elle-même de base est complexe à comprendre et à assimiler.
 Mais une fois maîtrisée, ce concept devient alors une arme redoutable pour écrire des fonctionnalités asynchrones de façon optimale (chaînage d'appels HTTP, vérification d'un élement par serveur avant validation, ...), d'avoir une interface réactive qui se met à jour automatiquement à la réception d'événements en temps réel depuis le flux de données, de remplacer la délégation (faire passer des données de la vue secondaire à la vue principale, ...), ... **De plus, le fait de savoir utiliser la programmation réactive est également indispensable pour intégrer un projet d'application iOS dans une entreprise, étant l'une des compétences les plus exigées.**
@@ -83,3 +83,190 @@ Ici, je propose comme exemple une actualisation réactive en temps réel du `Tab
     + Par numéro dans l'ordre croissant.
 
 <img src="https://github.com/Kous92/Test-MVVM-Combine-UIKit-iOS/blob/main/ReactiveFilters.gif" width="350">
+
+4. En tapant sur une cellule, un `ViewController` apparaît pour y afficher les détails du joueur sélectionné (image, nom, numéro, position, formé ou non au PSG, date de naissance, pays, taille, poids, nombre de matches joués et nombre de buts)
+
+<img src="https://github.com/Kous92/Test-MVVM-Combine-UIKit-iOS/blob/main/ReactiveDetails.gif" width="350">
+
+**ICI C'EST PARIS 🔵🔴**
+
+### Les éléments utilisés avec Combine dans cet exemple
+
+#### 1) L'actualisation réactive
+
+Pour l'actualisation réactive, j'utilise un sujet dans ma vue modèle (ici `PSGPlayersViewModel`). Lorsque l'appli est lancée et qu'elle fait l'appel HTTP depuis un serveur, le sujet va émettre un événement de réussite si le téléchargement est effectué et si la liste des vues modèles des `TableViewCell` est mise à jour. Le sujet de mise à jour `updateResult` est un `PassthroughSubject`. Un sujet a 2 types dans sa déclaration: une valeur et un élément pour les erreurs (`Never` s'il n'y a pas d'erreur à gérer). Ici, c'est le cas s'il y a une erreur, notamment au lancement de l'application lors de l'appel HTTP (aucune connexion internet, erreur 404, décodage JSON en objets,...). La particularité du `PassthroughSubject` est qu'il n'y a pas besoin de donner une valeur initiale à émettre.
+
+```swift
+import Combine
+
+final class PSGPlayersViewModel {
+    // Les sujets, ceux qui émettent et reçoivent des événements
+    var updateResult = PassthroughSubject<Bool, APIError>()
+}
+```
+
+Lors du téléchargement, si les données sont mise à jour, on utilise la méthode `send(value)` pour émettre un événement.
+S'il y a une erreur, on utilise `send(completion: .failure(error)`. Sinon, on envoie la valeur.
+```swift
+import Combine
+
+final class PSGPlayersViewModel {
+    ...
+    func getPlayers() {
+        apiService.fetchPlayers { [weak self] result in
+            switch result {
+            case .success(let response):
+                self?.playersData = response
+                self?.parseData()
+            case .failure(let error):
+                print(error.rawValue)
+                self?.updateResult.send(completion: .failure(error)) // On émet une erreur
+            }
+        }
+    }
+
+    private func parseData() {
+        guard let data = playersData, data.players.count > 0 else {
+            // Pas de joueurs téléchargés
+            updateResult.send(false)
+            
+            return
+        }
+        
+        data.players.forEach { playersViewModel.append(PSGPlayerCellViewModel(player: $0)) }
+        filteredPlayersViewModels = playersViewModel
+        updateResult.send(true) // On notifie la vue que les données sont mises à jour afin d'actualiser le TableView
+    }
+}
+```
+
+Au niveau du `ViewController`, on utilise la propriété `updateResult` afin de faire le data binding entre la vue et la vue modèle. Étant donné, que les opérations en réactifs sont asynchrones, on commence avec `receive(on: )` pour préciser dans quel thread on va recevoir la valeur. Les opérations UI ne doivent se faire que dans le thread principal, on va donc mettre en paramètre `RunLoop.main` ou `DispatchQueue.main` (les 2 sont similaires).
+
+Ensuite, l'abonnement pour y traiter les événements se fait avec `sink(completion: , receive: value)`. Dans `completion`, c'est là où on traite 2 situations, soit si le flux s'arrête d'émettre, soit s'il y a une erreur. Dans `receiveValue`, c'est là qu'on peut faire les opérations UI comme actualiser le `TableView`. On stocke ensuite l'abonnement dans une liste d'`AnyCancellable` afin d'éviter les fuites de mémoire.
+```swift
+final class MainViewController: UIViewController {
+    ...
+    private var subscriptions = Set<AnyCancellable>()
+    private var viewModel = PSGPlayersViewModel()
+
+    private func setBindings() {
+        func setUpdateBinding() {
+            // La vue reçoit en temps réel l'événement émis par le sujet
+            viewModel.updateResult.receive(on: RunLoop.main).sink { completion in
+                switch completion {
+                case .finished:
+                    print("OK: terminé")
+                case .failure(let error):
+                    // On peut afficher par exemple une alerte pour notifier explicitement d'une erreur
+                    print("Erreur reçue: \(error.rawValue)")
+                }
+            } receiveValue: { [weak self] updated in
+                // Les données de la vue modèle sont mise à jour, on actualise la liste
+                self?.loadingSpinner.stopAnimating()
+                self?.loadingSpinner.isHidden = true
+                
+                if updated {
+                    self?.updateTableView()
+                } else {
+                    self?.displayNoResult()
+                }
+            }.store(in: &subscriptions)
+        }
+        
+        setUpdateBinding()
+    }
+}
+```
+#### 1) La recherche réactive
+
+Pour la recherche réactive, j'utilise 2 éléments dans ma vue modèle (ici `PSGPlayersViewModel`). Je reprends le sujet d'actualisation `updateResult`, et une propriété `@Published` pour la recherche qui reçoit en temps réel un `String` afin de rechercher le joueur voulu. Cet élément fera office d'observateur qui va s'abonner aux événements de la vue. Il faudra également utiliser un `AnyCancellable` pour gérer l'annulation des abonnements et éviter toute fuite mémoire.
+
+```swift
+import Combine
+
+final class PSGPlayersViewModel {
+    // Les sujets, ceux qui émettent et reçoivent des événements
+    var updateResult = PassthroughSubject<Bool, APIError>()
+    @Published var searchQuery = ""
+
+    // Pour la gestion mémoire et l'annulation des abonnements
+    private var subscriptions = Set<AnyCancellable>()
+}
+```
+
+Ici, on définit le data binding avec la vue, où l'observeur `searchQuery` s'abonne aux événements de la vue. La propriété étant un `Publisher<String>`, il faut précéder le nom de la variable avec un `$` pour recevoir les événements. Dans le cadre de la recherche, on va d'abord recevoir dans le thread principal avec `.receive(on: RunLoop.main)`, ignorer les doublons d'événements avec `.removeDuplicates()`. Ensuite, il ne faut pas surcharger le flux du thread principal en temporisant la réception d'événements avec `.debounce(for: .seconds(0.5), scheduler: RunLoop.main)`. La réception de la valeur pour y effectuer l'action se fait avec `sink(receiveValue: )`. On stocke ensuite l'abonnement dans une liste d'`AnyCancellable` afin d'éviter les fuites de mémoire.
+
+```swift
+final class PSGPlayersViewModel {
+    ...
+    private func setBindings() {
+        $searchQuery
+            .receive(on: RunLoop.main)
+            .removeDuplicates()
+            .debounce(for: .seconds(0.5), scheduler: RunLoop.main)
+            .sink { [weak self] value in
+                self?.searchPlayer()
+            }.store(in: &subscriptions)
+    }
+}
+```
+
+Dans le `ViewController`, on fait la même chose que dans la vue modèle avec un `Publisher<String>` (`@Published searchQuery`). Dans le traitement de l'abonnement avec `sink(receiveValue: )`, on affecte la valeur recherchée à l'observeur de la vue modèle. La valeur reçue dans la vue modèle va automatiquement déclencher la fonction `searchPlayer()`. Dans la fonction `textDidChange` de `UISearchBarDelegate`, dès lors que le texte de la barre de recherche est modifié, l'action dans le `sink(receiveValue: )` va se déclencher.
+```swift
+final class MainViewController: UIViewController {
+    ...
+    @Published private(set) var searchQuery = ""
+    private var subscriptions = Set<AnyCancellable>()
+    private var viewModel = PSGPlayersViewModel()
+
+    private func setBindings() {
+        func setSearchBinding() {
+            $searchQuery
+                .receive(on: RunLoop.main)
+                .removeDuplicates()
+                .sink { [weak self] value in
+                    print(value)
+                    self?.viewModel.searchQuery = value
+                }.store(in: &subscriptions)
+        }
+
+        func setUpdateBinding() {
+            ...
+        }
+        
+        setSearchBinding()
+        setUpdateBinding()
+    }
+}
+
+extension MainViewController: UISearchBarDelegate {
+    // C'est ici que lorsqu'on modifie le texte de la barre de recherche. L'abonnement va automatiquement envoyer une nouvelle valeur à l'observeur de la vue modèle.
+    func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
+        self.searchQuery = searchText
+    }
+}
+```
+
+Et bien sûr, la fonction `searchPlayer()` émettra depuis le sujet `updateResult` un signal d'actualisation avec `true` s'il y a des données après filtrage, `false` si la liste est vide.
+```swift
+final class PSGPlayersViewModel {
+    ...
+    private func searchPlayer() {
+        guard !searchQuery.isEmpty else {
+            activeFilter = .noFilter
+            filteredPlayersViewModels = playersViewModel
+            updateResult.send(true)
+            
+            return
+        }
+        
+        filteredPlayersViewModels = playersViewModel.filter { $0.name.lowercased().contains(searchQuery.lowercased()) }
+        
+        if filteredPlayersViewModels.count > 0 {
+            updateResult.send(true)
+        } else {
+            updateResult.send(false)
+        }
+    }
+}
+```

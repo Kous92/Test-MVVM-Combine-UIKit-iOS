@@ -32,17 +32,21 @@ final class MainViewController: UIViewController {
             fatalError("Le ViewController n'est pas détecté dans le Storyboard.")
         }
         
-        filterViewController.viewModel.setFilter(savedFilter: viewModel.activeFilter)
+        func setFilterVCBinding() {
+            // On garde en mémoire le filtre sélectionné
+            filterViewController.viewModel.setFilter(savedFilter: viewModel.activeFilter)
+            
+            // Ici, on remplace la délégation par un binding par le biais d'un PassthroughSubject
+            filterViewController.viewModel.selectedFilter
+                .handleEvents(receiveOutput: { [weak self] filter in
+                    self?.appliedFilterLabel.text = filter.rawValue
+                    self?.viewModel.activeFilter = filter
+                }).sink { _ in }
+                .store(in: &subscriptions)
+        }
         
-        filterViewController.viewModel.selectedFilter
-            .handleEvents(receiveOutput: { [weak self] filter in
-                self?.appliedFilterLabel.text = filter.rawValue
-                self?.viewModel.activeFilter = filter
-            }).sink { _ in }
-            .store(in: &subscriptions)
-        
+        setFilterVCBinding()
         filterViewController.modalPresentationStyle = .fullScreen
-        
         self.present(filterViewController, animated: true, completion: nil)
     }
 }
@@ -85,39 +89,50 @@ extension MainViewController {
     }
     
     private func setBindings() {
-        $searchQuery
-            .receive(on: RunLoop.main)
-            .removeDuplicates()
-            .sink { [weak self] value in
-                print(value)
-                self?.viewModel.searchQuery = value
-            }.store(in: &subscriptions)
+        func setSearchBinding() {
+            $searchQuery
+                .receive(on: RunLoop.main)
+                .removeDuplicates()
+                .sink { [weak self] value in
+                    print(value)
+                    self?.viewModel.searchQuery = value
+                }.store(in: &subscriptions)
+        }
         
-        viewModel.updateResult.receive(on: RunLoop.main).sink { completion in
-            switch completion {
-            case .finished:
-                print("OK: terminé")
-            case .failure(let error):
-                print("Erreur reçue: \(error.rawValue)")
-            }
-        } receiveValue: { [weak self] updated in
-            self?.loadingSpinner.stopAnimating()
-            self?.loadingSpinner.isHidden = true
-            
-            if updated {
-                self?.updateTableView()
-            } else {
-                self?.displayNoResult()
-            }
-        }.store(in: &subscriptions)
-        
-        viewModel.$activeFilter
-            .receive(on: RunLoop.main)
-            .removeDuplicates()
-            .sink { [weak self] value in
-                print(value)
-                self?.viewModel.activeFilter = value
+        func setUpdateBinding() {
+            viewModel.updateResult.receive(on: RunLoop.main).sink { completion in
+                switch completion {
+                case .finished:
+                    print("OK: terminé")
+                case .failure(let error):
+                    print("Erreur reçue: \(error.rawValue)")
+                }
+            } receiveValue: { [weak self] updated in
+                self?.loadingSpinner.stopAnimating()
+                self?.loadingSpinner.isHidden = true
+                
+                if updated {
+                    self?.updateTableView()
+                } else {
+                    self?.displayNoResult()
+                }
             }.store(in: &subscriptions)
+        }
+        
+        func setActiveFilterBinding() {
+            viewModel.$activeFilter
+                .receive(on: RunLoop.main)
+                .removeDuplicates()
+                .sink { [weak self] value in
+                    print(value)
+                    self?.viewModel.activeFilter = value
+                }.store(in: &subscriptions)
+        }
+        
+        // L'intérêt d'utiliser des fonctions imbriquées est de pouvoir respecter le 1er prinicipe du SOLID étant le principe de responsabilité unique (SRP: Single Responsibility Principle)
+        setSearchBinding()
+        setUpdateBinding()
+        setActiveFilterBinding()
     }
 }
 

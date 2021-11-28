@@ -40,6 +40,7 @@ final class PSGPlayerDetailsViewController: UIViewController {
 }
 
 extension PSGPlayerDetailsViewController {
+    // L'actualisation de la vue sera automatique.
     private func setBindings() {
         viewModel.$number
             .receive(on: RunLoop.main)
@@ -79,13 +80,13 @@ extension PSGPlayerDetailsViewController {
         
         viewModel.$birthDate
             .receive(on: RunLoop.main)
-            .compactMap { $0 }
+            .compactMap { "Date de naissance: " + $0 }
             .assign(to: \.text, on: playerBirthdateLabel)
             .store(in: &subscriptions)
         
         viewModel.$fromPSGformation
             .receive(on: RunLoop.main)
-            .compactMap { "Formé au PSG: " + ($0 ? "oui" : "non") }
+            .compactMap { "Formé au PSG: " + ($0 ? "oui": "non") }
             .assign(to: \.text, on: playerTrainedLabel)
             .store(in: &subscriptions)
         
