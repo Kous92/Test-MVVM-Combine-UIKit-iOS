@@ -71,7 +71,7 @@ Ici, je propose comme exemple une actualisation réactive en temps réel du `Tab
 1. Au lancement de l'application, par le biais d'un appel HTTP `GET` d'un fichier JSON en ligne. Les données téléchargées y sont donc disposées dans des `ViewModel` dédiées aux `TableViewCell`.
 2. Lors de la recherche d'un joueur, le filtrage va s'appliquer automatiquement en fonction du texte saisi et actualiser en temps réel la liste visuelle avec les données filtrées.
 
-![Recherche réactive](https://github.com/Kous92/Test-MVVM-Combine-UIKit-iOS/blob/main/ReactiveSearch.gif)
+<img src="https://github.com/Kous92/Test-MVVM-Combine-UIKit-iOS/blob/main/ReactiveSearch.gif" width="350">
 
 3. En tapant sur le bouton du filtrage, un `ViewController` apparaît pour permettre la sélection d'un filtre afin d'y actualiser la liste de la vue principale parmi les critères possibles: 
     + Gardiens de buts
@@ -82,4 +82,4 @@ Ici, je propose comme exemple une actualisation réactive en temps réel du `Tab
     + Par ordre alphabétique
     + Par numéro dans l'ordre croissant.
 
-![Filtrage réactif](https://github.com/Kous92/Test-MVVM-Combine-UIKit-iOS/blob/main/ReactiveFilters.gif)
+<img src="https://github.com/Kous92/Test-MVVM-Combine-UIKit-iOS/blob/main/ReactiveFilters.gif" width="350">
