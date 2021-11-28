@@ -65,11 +65,14 @@ Mais une fois maîtrisée, ce concept devient alors une arme redoutable pour éc
 
 Comparé à **RxSwift**, **Combine** reste moins complet en terme d'opérateurs pour des cas spécifiques et avancés. Aussi **Combine** n'est pas suffisamment adaptée pour une utilisation avec **UIKit** notamment pour les liens avec les composants UI, chose qui est plus complète avec **RxSwift**.
 
-## <a name="exemple"></a>Exemple
+## <a name="example"></a>Exemple
 
 Ici, je propose comme exemple une actualisation réactive en temps réel du `TableView` des joueurs du PSG avec l'architecture MVVM. Cette actualisation se fait de plusieurs façons:
 1. Au lancement de l'application, par le biais d'un appel HTTP `GET` d'un fichier JSON en ligne. Les données téléchargées y sont donc disposées dans des `ViewModel` dédiées aux `TableViewCell`.
 2. Lors de la recherche d'un joueur, le filtrage va s'appliquer automatiquement en fonction du texte saisi et actualiser en temps réel la liste visuelle avec les données filtrées.
+
+![Recherche réactive](https://github.com/Kous92/Test-MVVM-Combine-UIKit-iOS/blob/main/ReactiveSearch.gif)
+
 3. En tapant sur le bouton du filtrage, un `ViewController` apparaît pour permettre la sélection d'un filtre afin d'y actualiser la liste de la vue principale parmi les critères possibles: 
     + Gardiens de buts
     + Défenseurs
@@ -78,3 +81,5 @@ Ici, je propose comme exemple une actualisation réactive en temps réel du `Tab
     + Joueurs formés au PSG (les titis Parisiens) 🔵🔴
     + Par ordre alphabétique
     + Par numéro dans l'ordre croissant.
+
+![Filtrage réactif](https://github.com/Kous92/Test-MVVM-Combine-UIKit-iOS/blob/main/ReactiveFilters.gif)
